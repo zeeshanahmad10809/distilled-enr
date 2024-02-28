@@ -1,0 +1,19 @@
+cars_train1/
+cars_train/
+
+
+*-experiment/
+train-models/
+
+
+*.pyc
+*.pt
+*.pkl
+*.pth
+
+
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+.vscode/

@@ -1,9 +1,9 @@
 {
-  "id": "chairs-experiment",
-  "path_to_data": "chairs-train",
-  "path_to_test_data": "chairs-val",
+  "id": "cars-experiment",
+  "path_to_data": "cars_train1",
+  "_comment_path_to_test_data": "cars-val",
   "multi_gpu": false,
-  "batch_size": 16,
+  "batch_size": 4,
   "lr": 2e-4,
   "epochs": 100,
   "loss_type": "l1",
@@ -16,5 +16,6 @@
   "strides_3d": [1, 1, 2, 1, 1, -2, 1, 1],
   "num_channels_projection": [512, 256, 256],
   "num_channels_inv_projection": [256, 512, 1024],
-  "mode": "bilinear"
+  "mode": "bilinear",
+  "eg3d_model": "trained-models/shapenetcars128-64.pt"
 }
