@@ -1,13 +1,19 @@
+"""
+Dataloader for ENR::
+File modified from the source: https://github.com/apple/ml-equivariant-neural-rendering/blob/main/misc/dataloaders.py 
+"""
+
 import glob
 import json
 import torch
+import numpy as np
 from numpy import float32 as np_float32
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader, Sampler
 from torchvision import transforms
 
 
-def scene_render_dataloader(path_to_data='chairs-train', batch_size=16,
+def scene_render_dataloader(path_to_data='cars_train', batch_size=16,
                             img_size=(3, 128, 128), crop_size=128):
     """Dataloader for scene render datasets. Returns scene renders in pairs,
     i.e. 1st and 2nd images are of some scene, 3rd and 4th are of some different
@@ -32,7 +38,7 @@ def scene_render_dataloader(path_to_data='chairs-train', batch_size=16,
                       drop_last=True)
 
 
-def scene_render_dataset(path_to_data='chairs-train', img_size=(3, 128, 128),
+def scene_render_dataset(path_to_data='cars_train', img_size=(3, 128, 128),
                          crop_size=128, allow_odd_num_imgs=False):
     """Helper function for creating a scene render dataset.
 
@@ -70,13 +76,13 @@ class SceneRenderDataset(Dataset):
             training iteration requires a *pair* of images.
 
     Notes:
-        - Image paths must be of the form "XXXXX.png" where XXXXX are *five*
+        - Image paths must be of the form "XXXXX.png" where XXXXXX are *six*
         integers indexing the image.
         - We assume there are the same number of rendered images for each scene
         and that this number is even.
         - We assume angles are given in degrees.
     """
-    def __init__(self, path_to_data='chairs-train', img_transform=None,
+    def __init__(self, path_to_data='cars_train', img_transform=None,
                  allow_odd_num_imgs=False):
         self.path_to_data = path_to_data
         self.img_transform = img_transform
@@ -113,10 +119,11 @@ class SceneRenderDataset(Dataset):
                 img_file = img_path.split('/')[-1]
                 # Filenames are of the type "<index>.png", so extract this
                 # index to match with render parameters.
-                img_idx = img_file.split('.')[0][-5:]  # This should be a string
+                # img_idx = img_file.split('.')[0][-6:]  # This should be a string
                 # Convert render parameters to float32
-                img_params = {key: np_float32(value)
-                              for key, value in render_params[img_idx].items()}
+                # img_params = {key: np_float32(value)
+                #               for key, value in render_params[img_idx].items()}
+                img_params = np.asarray(render_params[img_file], dtype=np_float32).tolist()
                 self.data.append({
                     "scene_name": scene_name,
                     "img_path": img_path,
@@ -129,6 +136,7 @@ class SceneRenderDataset(Dataset):
     def __getitem__(self, idx):
         img_path = self.data[idx]["img_path"]
         render_params = self.data[idx]["render_params"]
+        render_params = torch.tensor(render_params, dtype=torch.float32)
 
         img = Image.open(img_path)
 
@@ -139,9 +147,10 @@ class SceneRenderDataset(Dataset):
         # Note some images may contain 4 channels (i.e. RGB + alpha), we only
         # keep RGB channels
         data_item = {
+            "img_name": img_path, # added this for debugging.
             "img": img[:3],
             "scene_name": self.data[idx]["scene_name"],
-            "render_params": self.data[idx]["render_params"]
+            "render_params": render_params
         }
 
         return data_item
@@ -193,22 +202,9 @@ class RandomPairSampler(Sampler):
         return len(self.dataset)
 
 
-def create_batch_from_data_list(data_list):
-    """Given a list of datapoints, create a batch.
+if __name__ == "__main__":
+    dataloader = scene_render_dataloader("cars_train1", batch_size=4, img_size=[3, 128, 128], crop_size=128)
+    batch_input = next(iter(dataloader))
+    # from PIL import Image; idx=0; Image.fromarray(np.asarray(batch_input['img'][idx].permute(1, 2, 0).numpy()*255, dtype=np.uint8)).show()
+    print(batch_input)
 
-    Args:
-        data_list (list): List of items returned by SceneRenderDataset.
-    """
-    imgs = []
-    azimuths = []
-    elevations = []
-    for data_item in data_list:
-        img, render_params = data_item["img"], data_item["render_params"]
-        azimuth, elevation = render_params["azimuth"], render_params["elevation"]
-        imgs.append(img.unsqueeze(0))
-        azimuths.append(torch.Tensor([azimuth]))
-        elevations.append(torch.Tensor([elevation]))
-    imgs = torch.cat(imgs, dim=0)
-    azimuths = torch.cat(azimuths)
-    elevations = torch.cat(elevations)
-    return imgs, azimuths, elevations
