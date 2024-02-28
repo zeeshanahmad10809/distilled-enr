@@ -12,11 +12,11 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def load_eg3d_model(network_path):
-    # if not torch.cuda.is_available():
-    #     raise AssertionError("gpu must be available to load eg3d!")
-    # eg3d_teacher = torch.load(network_path).to(device)
-    # return eg3d_teacher
-    return None
+    if not torch.cuda.is_available():
+        raise AssertionError("gpu must be available to load eg3d!")
+    eg3d_teacher = torch.load(network_path).to(device)
+    return eg3d_teacher
+    # return None
 
 
 def main ():

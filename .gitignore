@@ -4,6 +4,7 @@ cars_train/
 
 *-experiment/
 train-models/
+dataset/
 
 
 *.pyc
@@ -13,7 +14,9 @@ train-models/
 
 
 
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
+.ipynb_checkpoints/
 
 .vscode/

@@ -200,7 +200,7 @@ class NeuralRenderer(nn.Module):
         # creating a dummy azimuth and elevation
         azimuth = torch.ones(params_25.shape[0]) * 180.2468
         elevation = torch.ones(params_25.shape[0]) * 80.56
-        return azimuth, elevation
+        return azimuth.to(device), elevation.to(device)
 
 
     def _render_using_eg3d_teacher(self, z, c):
@@ -234,7 +234,7 @@ class NeuralRenderer(nn.Module):
         # spherical is stored is the one where model is too
         device = self.spherical_mask.mask.device
         imgs = batch["img"].to(device)
-        params = batch["render_params"] # 25 parameters (16 extrinsics, 9 intrinsics)
+        params = batch["render_params"].to(device) # 25 parameters (16 extrinsics, 9 intrinsics)
         
         # azimuth = params["azimuth"].to(device)
         # elevation = params["elevation"].to(device)
