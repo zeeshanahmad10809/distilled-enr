@@ -204,13 +204,13 @@ class NeuralRenderer(nn.Module):
 
 
     def _render_using_eg3d_teacher(self, z, c):
-        # with torch.no_grad():
-        #     w = self.teacher_renderer.mapping(z, c, truncation_psi=0.7, truncation_cutoff=14)
-        #     img = self.teacher_renderer.synthesis(w, c)['image']
-        #     img = (img * 127.5 + 128).clamp(0, 255).to(torch.uint8) # [-1, 1] -> [0, 255]
-        #     img = img / 255.0 # [0, 255] -> [0, 1]
-        # return img
-        return torch.rand(z.shape[0], 3, 128, 128).to(device)
+        with torch.no_grad():
+            w = self.teacher_renderer.mapping(z, c, truncation_psi=0.7, truncation_cutoff=14)
+            img = self.teacher_renderer.synthesis(w, c)['image']
+            img = (img * 127.5 + 128).clamp(0, 255).to(torch.uint8) # [-1, 1] -> [0, 255]
+            img = img / 255.0 # [0, 255] -> [0, 1]
+        return img
+        # return torch.rand(z.shape[0], 3, 128, 128).to(device)
 
 
     def forward(self, batch):
