@@ -158,8 +158,9 @@ class Trainer():
             batch (dict): Batch of data as returned by a Dataloader for a
                 misc.dataloaders.SceneRenderDataset instance.
         """
-        imgs, rendered, scenes, scenes_rotated = self.model(batch)
-        self._optimizer_step(imgs, rendered)
+        imgs, enr_rendered, eg3d_rendered, scenes, scenes_rotated = self.model(batch)
+        # self._optimizer_step(imgs, enr_rendered)
+        self._optimizer_step(eg3d_rendered, enr_rendered) # Use eg3d_rendered as ground truth
 
     def _optimizer_step(self, imgs, rendered):
         """Updates weights of neural renderer.
@@ -197,7 +198,7 @@ class Trainer():
         """Reconstructs fixed batch through neural renderer (by inferring
         scenes, rotating them and rerendering).
         """
-        _, rendered, _, _ = self.model(self.fixed_batch)
+        _, rendered, _, _, _ = self.model(self.fixed_batch)
         return rendered
 
     def _print_losses(self, epoch_loss=False):

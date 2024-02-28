@@ -3,6 +3,10 @@ import torch.nn as nn
 from misc.utils import pretty_print_layers_info, count_parameters
 from models.submodels import ResNet2d, ResNet3d, Projection, InverseProjection
 from models.rotation_layers import SphericalMask, Rotate3d
+from models.stylegan2_support.networks_stylegan2 import MappingNetwork, SynthesisNetwork
+
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 class NeuralRenderer(nn.Module):
@@ -42,7 +46,7 @@ class NeuralRenderer(nn.Module):
     """
     def __init__(self, img_shape, channels_2d, strides_2d, channels_3d,
                  strides_3d, num_channels_inv_projection, num_channels_projection,
-                 mode='bilinear'):
+                 mode='bilinear', teacher_renderer=None):
         super(NeuralRenderer, self).__init__()
         self.img_shape = img_shape
         self.channels_2d = channels_2d
@@ -52,16 +56,44 @@ class NeuralRenderer(nn.Module):
         self.num_channels_projection = num_channels_projection
         self.num_channels_inv_projection = num_channels_inv_projection
         self.mode = mode
+        # if teacher_renderer is None:
+        #     raise ValueError("Teacher renderer must be provided")
+        self.teacher_renderer = teacher_renderer
 
         # Initialize layers
 
         # Inverse pass (image -> scene)
         # First transform image into a 2D representation
-        self.inv_transform_2d = ResNet2d(self.img_shape, channels_2d,
-                                         strides_2d)
+        # DONE: Replace it with the Mapping Network and Synthesis Network
+        # set output resolution to 128x128, 
+        # self.inv_transform_2d = ResNet2d(self.img_shape, channels_2d,
+        #                                  strides_2d)
+        
+        ######################### Synthesis Network starts #########################
+        # Here img_resolution is 32, img_channels is 128 is according to ResNet2d previously used (by ENR)
+        w_dim = 512 # intermediate latent 
+        img_resolution = 32 # 2d feature resolution
+        img_channels = 128 # no of 2d features stacked
+        synthesis_kwargs = {'channel_base': 32768, 'channel_max': 512, 'fused_modconv_default': 'inference_only', 'num_fp16_res': 0, 'conv_clamp': None}
+
+        self.synthesis_network = SynthesisNetwork(w_dim=w_dim, img_resolution=img_resolution, img_channels=img_channels, **synthesis_kwargs)
+        ######################### Synthesis Network ends #########################
+
+
+        ######################### Mapping Network starts #########################
+        z_dim = 512 # latent dimension
+        c_dim = 25 # camera parameters
+        w_dim = 512 # intermediate latent
+        mapping_kwargs = {'num_layers': 2}
+
+        self.mapping_network = MappingNetwork(z_dim=z_dim, c_dim=c_dim, w_dim=w_dim, num_ws=self.synthesis_network.num_ws, **mapping_kwargs)
+        ############################# Mapping Network ends #########################
+
+
 
         # Perform inverse projection from 2D to 3D
-        input_shape = self.inv_transform_2d.output_shape
+        # input_shape = self.inv_transform_2d.output_shape
+        input_shape = self.synthesis_network.output_shape
         self.inv_projection = InverseProjection(input_shape, num_channels_inv_projection)
 
         # Transform 3D inverse projection into a scene representation
@@ -106,14 +138,25 @@ class NeuralRenderer(nn.Module):
         features_2d = self.projection(features_3d)
         return torch.sigmoid(self.transform_2d(features_2d))
 
-    def inverse_render(self, img):
-        """Maps an image to a (spherical) scene representation.
+    def inverse_render(self, z, c):
+        """Maps an 512 sampled vector to a (spherical) scene representation.
 
         Args:
-            img (torch.Tensor): Shape (batch_size, channels, height, width).
+            z (torch.Tensor): Shape (batch_size, 512).
+            c (torch.Tensor): Shape (batch_size 25)
         """
+        # """Maps an image to a (spherical) scene representation.
+# 
+        # Args:
+        #     img (torch.Tensor): Shape (batch_size, channels, height, width).
+        # """
         # Transform image to 2D features
-        features_2d = self.inv_transform_2d(img)
+        # features_2d = self.inv_transform_2d(img)
+        #################### Inverse Transform using Mapping and Synthesis Networks starts ####################
+        w = self.mapping_network(z, c)
+        features_2d = self.synthesis_network(w)
+        #################### Inverse Transform using Mapping and Synthesis Networks ends ####################
+
         # Perform inverse projection
         features_3d = self.inv_projection(features_2d)
         # Map 3D features to scene representation
@@ -149,6 +192,26 @@ class NeuralRenderer(nn.Module):
                                                            elevation_source,
                                                            azimuth_target,
                                                            elevation_target)
+    
+    def _extrinsics_intrinsics_to_azimuth_elevation(self, params_25):
+        # azimuth, elevation are in degrees
+
+        # TODO: Implement the actual conversion from params_25 to azimuth and elevation
+        # creating a dummy azimuth and elevation
+        azimuth = torch.ones(params_25.shape[0]) * 180.2468
+        elevation = torch.ones(params_25.shape[0]) * 80.56
+        return azimuth, elevation
+
+
+    def _render_using_eg3d_teacher(self, z, c):
+        # with torch.no_grad():
+        #     w = self.teacher_renderer.mapping(z, c, truncation_psi=0.7, truncation_cutoff=14)
+        #     img = self.teacher_renderer.synthesis(w, c)['image']
+        #     img = (img * 127.5 + 128).clamp(0, 255).to(torch.uint8) # [-1, 1] -> [0, 255]
+        #     img = img / 255.0 # [0, 255] -> [0, 1]
+        # return img
+        return torch.rand(z.shape[0], 3, 128, 128).to(device)
+
 
     def forward(self, batch):
         """Given a batch of images and poses, infers scene representations,
@@ -171,12 +234,16 @@ class NeuralRenderer(nn.Module):
         # spherical is stored is the one where model is too
         device = self.spherical_mask.mask.device
         imgs = batch["img"].to(device)
-        params = batch["render_params"]
-        azimuth = params["azimuth"].to(device)
-        elevation = params["elevation"].to(device)
+        params = batch["render_params"] # 25 parameters (16 extrinsics, 9 intrinsics)
+        
+        # azimuth = params["azimuth"].to(device)
+        # elevation = params["elevation"].to(device)
+        # calculate azimuth and elevation from params
+        azimuth, elevation = self._extrinsics_intrinsics_to_azimuth_elevation(params)
 
-        # Infer scenes from images
-        scenes = self.inverse_render(imgs)
+        # Infer scenes from images (NOTE: we'll use z ~ N(0, I) for now)
+        z = torch.randn(params.shape[0], 512).to(device)
+        scenes = self.inverse_render(z, params)
 
         # Rotate scenes so that for every pair of rendered images, the 1st
         # one will be reconstructed as the 2nd and then 2nd will be
@@ -204,9 +271,12 @@ class NeuralRenderer(nn.Module):
         scenes_rotated = scenes_swapped[swapped_idx]
 
         # Render scene using model
-        rendered = self.render(scenes_rotated)
+        enr_rendered = self.render(scenes_rotated)
 
-        return imgs, rendered, scenes, scenes_rotated
+        # render using eg3d teacher model
+        eg3d_rendered = self._render_using_eg3d_teacher(z, params)
+
+        return imgs, enr_rendered, eg3d_rendered, scenes, scenes_rotated
 
     def print_model_info(self):
         """Prints detailed information about model, such as how input shape is
@@ -297,3 +367,4 @@ def get_swapped_indices(length):
         length (int): Length of swapped indices.
     """
     return [i + 1 if i % 2 == 0 else i - 1 for i in range(length)]
+
